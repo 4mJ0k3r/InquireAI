@@ -57,5 +57,9 @@ typings/
 # dotenv environment variables file
 .env
 
+# uploads folder
+uploads/*
+!uploads/.gitkeep
+
 # next.js build output
 .next

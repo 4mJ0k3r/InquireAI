@@ -24,7 +24,9 @@ const authMiddleware = (req, res, next) => {
       userId: decoded.sub,
       role: decoded.role
     };
-    req.tenant = decoded.tenantId;
+    req.tenant = {
+      tenantId: decoded.tenantId
+    };
     
     next();
   } catch (error) {
