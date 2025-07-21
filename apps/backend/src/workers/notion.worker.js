@@ -205,7 +205,14 @@ const notionWorker = new Worker('notion-sync', async (job) => {
     
     throw error;
   }
-}, { connection });
+}, { 
+  connection,
+  concurrency: 1, // Process one notion job at a time to avoid race conditions
+  limiter: {
+    max: 1, // Max 1 job per second
+    duration: 1000
+  }
+});
 
 // Event listeners for worker
 notionWorker.on('completed', (job) => {

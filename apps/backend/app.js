@@ -18,4 +18,14 @@ var usersRouter = require('./routes/users');
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 
+// Global error handlers for process-level errors
+process.on('uncaughtException', (err) => {
+  console.error('UNCAUGHT EXCEPTION:', err);
+  // Optionally: process.exit(1);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('UNHANDLED REJECTION:', reason);
+  // Optionally: process.exit(1);
+});
+
 module.exports = app;

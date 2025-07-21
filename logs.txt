@@ -1,0 +1,1 @@
+I want you to draw full structure tree of the application and then list all technologies used in frontend and backend and all the  information that you think are relevent to give to a person who is going to deploy this application now on the internet from local. 

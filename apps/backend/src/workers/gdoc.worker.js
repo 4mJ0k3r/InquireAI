@@ -102,6 +102,13 @@ const gdocWorker = new Worker('gdoc-fetch', async (job) => {
     
     throw error;
   }
-}, { connection });
+}, { 
+  connection,
+  concurrency: 1, // Process one gdoc job at a time to avoid race conditions
+  limiter: {
+    max: 1, // Max 1 job per second
+    duration: 1000
+  }
+});
 
 module.exports = gdocWorker;

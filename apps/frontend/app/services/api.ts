@@ -31,8 +31,6 @@ export const connectSource = (provider: string, data?: any) =>
   api.post(`/sources/${provider}/connect`, data);
 export const connectNotionWithKey = (apiKey: string) =>
   api.post("/sources/notion/connect", { apiKey });
-export const connectSlackBot = (apiKey: string, channelName: string) =>
-  api.post("/sources/slack-bot/connect", { apiKey, channelName });
 export const disconnectSource = (provider: string) =>
   api.post(`/sources/${provider}/disconnect`);
 

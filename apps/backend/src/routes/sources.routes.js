@@ -2,7 +2,6 @@ const express = require('express');
 const Source = require('../models/Source');
 const Job = require('../models/Job');
 const { notionQueue } = require('../workers/notion.queue');
-const { slackQueue } = require('../workers/slack.queue');
 
 const router = express.Router();
 
@@ -19,8 +18,7 @@ router.get('/list', async (req, res, next) => {
         { provider: 'notion', status: 'disconnected', tenantId },
         { provider: 'gdocs', status: 'disconnected', tenantId },
         { provider: 'site-docs', status: 'disconnected', tenantId },
-        { provider: 'uploads', status: 'disconnected', tenantId },
-        { provider: 'slack-bot', status: 'disconnected', tenantId }
+        { provider: 'uploads', status: 'disconnected', tenantId }
       ];
       
       rows = await Source.insertMany(defaultRows);
@@ -154,112 +152,6 @@ router.post('/:provider/connect', async (req, res, next) => {
        message: 'Uploads connection successful',
        source: updatedSource
      });
-   } else if (provider === 'slack-bot') {
-     // Handle Slack bot connection
-     const { apiKey, channelName } = req.body;
-     
-     if (!apiKey || !channelName) {
-       return res.status(400).json({ 
-         error: 'Both API key and channel name are required for Slack bot connection' 
-       });
-     }
-     
-     // Validate API key format (should start with 'xoxb-')
-     if (!apiKey.startsWith('xoxb-')) {
-       return res.status(400).json({ 
-         error: 'Invalid Slack Bot API key format. Please check your API key.' 
-       });
-     }
-     
-     try {
-       // Test the Slack API connection
-       const { WebClient } = require('@slack/web-api');
-       const slackClient = new WebClient(apiKey);
-       
-       // Test auth and get bot info
-       const authTest = await slackClient.auth.test();
-       
-       // Verify channel exists and bot has access by trying to send a test message
-       let channelInfo;
-       let finalChannelName = channelName;
-       
-       try {
-         // Try to send a test message to verify access
-         const testMessage = await slackClient.chat.postMessage({
-           channel: channelName,
-           text: '🤖 Bot connected successfully! This message confirms the connection is working.',
-           as_user: true
-         });
-         
-         // Create a mock channel info object since we can't get the actual info
-         channelInfo = {
-           channel: {
-             id: testMessage.channel,
-             name: channelName
-           }
-         };
-         finalChannelName = channelName;
-         
-       } catch (error) {
-         // Handle specific Slack API errors for message sending
-         if (error.data?.error === 'channel_not_found') {
-           throw new Error('Channel not found. Please make sure the channel exists.');
-         } else if (error.data?.error === 'not_in_channel') {
-           throw new Error('Bot is not invited to the channel. Please invite the bot to the channel first.');
-         } else if (error.data?.error === 'missing_scope') {
-           throw new Error('Bot is missing required permissions. Please add chat:write scope to your bot.');
-         } else {
-           throw new Error('Channel not found or bot not invited to channel');
-         }
-       }
-       
-       // Update source status to connected
-       const updatedSource = await Source.findOneAndUpdate(
-         { tenantId, provider: 'slack-bot' },
-         { 
-           status: 'connected',
-           lastSync: new Date(),
-           metadata: { 
-             apiKey: apiKey,
-             channelName: finalChannelName,
-             botUserId: authTest.user_id,
-             channelId: channelInfo.channel.id
-           }
-         },
-         { new: true, upsert: true }
-       );
-
-       console.log(`🤖 Connected Slack bot for tenant ${tenantId} to channel #${finalChannelName}`);
-       
-       // Start the Slack bot worker
-       console.log(`🔄 Queuing Slack bot worker job for tenant ${tenantId}`);
-       const job = await slackQueue.add('start-slack-bot', { action: 'start', tenantId });
-       console.log(`✅ Slack bot worker job queued with ID: ${job.id}`);
-       
-       res.json({ 
-         message: 'Slack bot connection successful',
-         source: updatedSource
-       });
-       
-     } catch (error) {
-       console.error('Slack connection error:', error);
-       
-       // Handle specific Slack API errors
-       let errorMessage = 'Failed to connect to Slack. Please check your API key and channel name.';
-       if (error.data?.error === 'invalid_auth') {
-         errorMessage = 'Invalid Slack API key. Please check your token.';
-       } else if (error.data?.error === 'channel_not_found') {
-         errorMessage = 'Channel not found. Please make sure the channel exists and the bot is invited to it.';
-       } else if (error.data?.error === 'not_in_channel') {
-         errorMessage = 'Bot is not in the channel. Please invite the bot to the channel first.';
-       } else if (error.data?.error === 'missing_scope') {
-         errorMessage = 'Bot is missing required permissions. Please add chat:write and channels:read scopes.';
-       } else if (error.message === 'Channel not found or bot not invited to channel') {
-         errorMessage = 'Channel not found or bot not invited. Please check:\n1. Channel name is correct\n2. Bot is invited to the channel\n3. You have permission to access the channel';
-       }
-       
-       return res.status(400).json({ error: errorMessage });
-     }
    } else if (provider === 'google-docs') {
       // Update Site Docs source status to connected
       await Source.findOneAndUpdate(
@@ -313,25 +205,6 @@ router.post('/:provider/disconnect', async (req, res, next) => {
       );
       
       console.log(`🔌 Disconnected Notion for tenant ${tenantId}`);
-      res.json({ message: 'disconnected' });
-      
-    } else if (provider === 'slack-bot') {
-      // Update Slack bot source status to disconnected and clear metadata
-      await Source.findOneAndUpdate(
-        { tenantId, provider: 'slack-bot' },
-        { 
-          status: 'disconnected', 
-          lastSynced: null,
-          metadata: {} // Clear stored API key and channel info
-        },
-        { upsert: true, new: true }
-      );
-      
-      console.log(`🤖 Disconnected Slack bot for tenant ${tenantId}`);
-      
-      // Stop the Slack bot worker
-      await slackQueue.add('stop-slack-bot', { action: 'stop', tenantId });
-      
       res.json({ message: 'disconnected' });
       
     } else {

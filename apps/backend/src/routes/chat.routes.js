@@ -3,7 +3,6 @@ const Redis = require('ioredis');
 const ChatLog = require('../models/ChatLog');
 const Source = require('../models/Source');
 const { chatQueue } = require('../workers/chat.queue');
-const { slackQueue } = require('../workers/slack.queue');
 
 const router = express.Router();
 
@@ -112,47 +111,6 @@ router.get('/history', async (req, res) => {
     res.json({ chats });
   } catch (error) {
     console.error('Error in /chat/history:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// POST /chat/slack - Send a question through Slack bot
-router.post('/slack', async (req, res) => {
-  try {
-    const { question } = req.body;
-    const tenantId = req.user.tenantId;
-
-    if (!question || question.trim() === '') {
-      return res.status(400).json({ error: 'Question is required' });
-    }
-
-    // Check if Slack bot is connected for this tenant
-    const slackSource = await Source.findOne({ 
-      tenantId, 
-      provider: 'slack-bot', 
-      status: 'connected' 
-    });
-
-    if (!slackSource) {
-      return res.status(400).json({ 
-        error: 'Slack bot is not connected. Please connect your Slack bot first.' 
-      });
-    }
-
-    // Add job to the Slack queue to process the question
-    await slackQueue.add('process-slack-question', {
-      action: 'process-question',
-      tenantId,
-      question: question.trim()
-    });
-
-    res.json({ 
-      message: 'Question sent to Slack bot',
-      channelName: slackSource.metadata.channelName 
-    });
-
-  } catch (error) {
-    console.error('Error in /chat/slack:', error);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

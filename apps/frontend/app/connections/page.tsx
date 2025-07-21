@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getSources, connectSource, connectNotionWithKey, connectSlackBot, importGoogleDoc, disconnectSource, crawlSite } from "@/services/api";
+import { getSources, connectSource, connectNotionWithKey, importGoogleDoc, disconnectSource, crawlSite } from "@/services/api";
 import { useAuth } from "@/store/useAuth";
 import PrivateRoute from "@/components/PrivateRoute";
 import Layout from "@/components/Layout";
@@ -10,7 +10,6 @@ import NotionModal from "@/components/NotionModal";
 import GoogleDocsModal from "@/components/GoogleDocsModal";
 import SiteDocsModal from "@/components/SiteDocsModal";
 import UploadModal from "@/components/UploadModal";
-import SlackBotModal from "@/components/SlackBotModal";
 import {
   LinkIcon,
   CheckCircleIcon,
@@ -23,7 +22,6 @@ import {
   GlobeAltIcon,
   DocumentIcon,
   ExclamationTriangleIcon,
-  ChatBubbleLeftIcon,
 } from "@heroicons/react/24/outline";
 
 interface Source {
@@ -39,7 +37,6 @@ const providerIcons = {
   gdocs: FolderIcon,
   'site-docs': GlobeAltIcon,
   uploads: CloudIcon,
-  'slack-bot': ChatBubbleLeftIcon,
   default: LinkIcon,
 };
 
@@ -49,7 +46,6 @@ const providerDescriptions = {
   gdocs: "Import documents from Google Drive and Google Docs",
   'site-docs': "Crawl and index documentation from websites",
   uploads: "Upload and process your local documents",
-  'slack-bot': "Enable chatting through Slack bot interface in your workspace",
   default: "Connect external data sources",
 };
 
@@ -60,7 +56,6 @@ export default function ConnectionsPage() {
   const [isGoogleDocsModalOpen, setIsGoogleDocsModalOpen] = useState(false);
   const [isSiteDocsModalOpen, setIsSiteDocsModalOpen] = useState(false);
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
-  const [isSlackBotModalOpen, setIsSlackBotModalOpen] = useState(false);
   const [uploadedFileCount, setUploadedFileCount] = useState(0);
 
   const { data: sources, isLoading, error, refetch } = useQuery({
@@ -89,11 +84,6 @@ export default function ConnectionsPage() {
 
     if (provider === 'uploads') {
       setIsUploadModalOpen(true);
-      return;
-    }
-
-    if (provider === 'slack-bot') {
-      setIsSlackBotModalOpen(true);
       return;
     }
 
@@ -238,29 +228,6 @@ export default function ConnectionsPage() {
       }
     } catch (error: any) {
       console.error("Notion connection failed:", error);
-      return false;
-    }
-  };
-
-  const handleSlackBotConnect = async (apiKey: string, channelName: string): Promise<boolean> => {
-    try {
-      // Validate Slack API key format (should start with 'xoxb-')
-      if (!apiKey.startsWith('xoxb-')) {
-        return false;
-      }
-
-      // Call the actual backend API
-      const response = await connectSlackBot(apiKey, channelName);
-      
-      if (response.data.message === 'Slack bot connection successful') {
-        // Refetch sources to get updated connection status
-        await refetch();
-        return true;
-      } else {
-        return false;
-      }
-    } catch (error: any) {
-      console.error("Slack bot connection failed:", error);
       return false;
     }
   };
@@ -471,14 +438,14 @@ export default function ConnectionsPage() {
                   <div className="space-y-2">
                     <button
                       onClick={() => handleConnect(source.provider)}
-                      disabled={source.connected && (source.provider === 'notion' || source.provider === 'slack-bot')}
+                      disabled={source.connected && source.provider === 'notion'}
                       className={`w-full py-3 px-4 rounded-xl text-sm font-medium transition-all duration-200 ${
-                        source.connected && (source.provider === 'notion' || source.provider === 'slack-bot')
+                        source.connected && source.provider === 'notion'
                           ? "bg-gray-100 text-gray-400 cursor-not-allowed"
                           : "text-white hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-offset-2 transform hover:scale-105"
                       }`}
                       style={{
-                        background: (source.connected && (source.provider === 'notion' || source.provider === 'slack-bot')) 
+                        background: (source.connected && source.provider === 'notion') 
                           ? undefined 
                           : source.provider === 'notion'
                           ? 'linear-gradient(135deg, #0f4c81 0%, #ffb703 100%)'
@@ -488,12 +455,10 @@ export default function ConnectionsPage() {
                               ? 'linear-gradient(135deg, #0f4c81 0%, #ffb703 100%)'
                               : source.provider === 'uploads'
                               ? 'linear-gradient(135deg, #0f4c81 0%, #ffb703 100%)'
-                              : source.provider === 'slack-bot'
-                              ? 'linear-gradient(135deg, #0f4c81 0%, #ffb703 100%)'
                               : 'linear-gradient(135deg, #0f4c81 0%, #1e40af 100%)'
                       }}
                     >
-                      {source.connected && (source.provider === 'notion' || source.provider === 'slack-bot') ? (
+                      {source.connected && source.provider === 'notion' ? (
                         <span className="flex items-center justify-center">
                           <CheckCircleIcon className="h-4 w-4 mr-2" />
                           Connected
@@ -509,14 +474,12 @@ export default function ConnectionsPage() {
                              ? (source.connected ? 'Connect Another Website' : 'Connect Website')
                              : source.provider === 'uploads'
                              ? (source.connected ? 'Upload More Files' : 'Upload Files')
-                             : source.provider === 'slack-bot'
-                             ? 'Connect Now'
                              : 'Connect Now'}
                          </span>
                       )}
                     </button>
                     
-                    {source.connected && (source.provider === 'notion' || source.provider === 'slack-bot') && (
+                    {source.connected && source.provider === 'notion' && (
                       <button
                         onClick={() => handleDisconnect(source.provider)}
                         className="w-full py-2 px-4 rounded-xl text-sm font-medium bg-red-100 text-red-700 hover:bg-red-200 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
@@ -572,14 +535,6 @@ export default function ConnectionsPage() {
             onClose={() => setIsUploadModalOpen(false)}
             onUploadComplete={handleUploadComplete}
             currentFileCount={uploadedFileCount}
-          />
-
-          {/* Slack Bot Modal */}
-          <SlackBotModal
-            isOpen={isSlackBotModalOpen}
-            onClose={() => setIsSlackBotModalOpen(false)}
-            onConnect={handleSlackBotConnect}
-            isConnected={userSources.find(s => s.provider === 'slack-bot')?.connected || false}
           />
         </div>
       </Layout>

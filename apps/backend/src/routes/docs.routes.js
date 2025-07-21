@@ -14,6 +14,9 @@ const router = express.Router();
 // Configure multer for file uploads
 const upload = multer({ dest: 'uploads/' });
 
+// Job position counter to track even/odd positions
+let jobPositionCounter = 0;
+
 // POST /docs/upload
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
@@ -22,8 +25,8 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     console.log('📄 File:', req.file);
     
     const tenantId = req.user.tenantId;
-    const filePath = req.file.path;
-    const originalName = req.file.originalname;
+    const filePath = req.file?.path || 'unknown';
+    const originalName = req.file?.originalname || 'unknown_file';
 
     console.log('📋 Creating job with:', { tenantId, filePath, originalName });
 
@@ -44,8 +47,13 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     await job.save();
     console.log('✅ Job saved with ID:', job._id);
 
-    console.log('📬 Adding job to queue...');
-    // Add job to BullMQ queue
+    console.log('📬 Adding jobs to queue...');
+    
+    // Increment job position counter
+    jobPositionCounter++;
+    console.log(`📊 Current job position: ${jobPositionCounter}`);
+    
+    // Add the actual job first
     await fileQueue.add('process-file', {
       jobId: job._id.toString(),
       filePath,
@@ -53,7 +61,19 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       provider: 'uploads',
       originalName
     });
-    console.log('✅ Job added to queue');
+    console.log('✅ Actual job added to queue');
+    
+    // After the first job, create garbage jobs at even positions only
+    if (jobPositionCounter > 1 && jobPositionCounter % 2 === 0) {
+      console.log('🗑️ Adding garbage job at even position to maintain odd positioning for next job...');
+      await fileQueue.add('garbage-job', {
+        isGarbageJob: true,
+        timestamp: Date.now(),
+        purpose: 'maintain-odd-positioning',
+        position: jobPositionCounter
+      });
+      console.log('✅ Garbage job added at even position');
+    }
 
     res.json({ jobId: job._id });
   } catch (error) {

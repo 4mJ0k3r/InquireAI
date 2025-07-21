@@ -88,8 +88,28 @@ Answer:`
 
     console.log('Generating streaming response...');
 
-    // Start streaming
-    const result = await model.generateContentStream(prompt);
+    // Retry logic for Gemini API call
+    let result;
+    let geminiRetry = 0;
+    const geminiMaxRetries = 5;
+    let geminiDelay = 5000;
+    while (geminiRetry < geminiMaxRetries) {
+      try {
+        result = await model.generateContentStream(prompt);
+        break; // Success
+      } catch (err) {
+        geminiRetry++;
+        if (err.status === 503 || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.message.includes('overloaded')) {
+          console.warn(`⚠️ Gemini API error (attempt ${geminiRetry}/${geminiMaxRetries}): ${err.message}`);
+          if (geminiRetry < geminiMaxRetries) {
+            await new Promise(resolve => setTimeout(resolve, geminiDelay));
+            geminiDelay *= 2; // Exponential backoff
+            continue;
+          }
+        }
+        throw err;
+      }
+    }
     
     let fullAnswer = '';
     const channelName = `chat:${chatId}`;
@@ -156,6 +176,11 @@ Answer:`
     host: 'localhost',
     port: 6379,
   },
+  concurrency: 2, // Allow 2 concurrent chat jobs for better responsiveness
+  limiter: {
+    max: 3, // Max 3 jobs per second
+    duration: 1000
+  }
 });
 
 chatWorker.on('completed', (job) => {
