@@ -5,14 +5,21 @@ const { processTextChunks } = require('../services/processText.service');
 const Source = require('../models/Source');
 const Job = require('../models/Job');
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
-
 const notionWorker = new Worker('notion-sync', async (job) => {
-  const { tenantId, jobId } = job.data;
+  const { tenantId, jobId, apiKey } = job.data;
   
   console.log(`🚀 Starting Notion sync for tenant: ${tenantId}`);
   
   try {
+    // Get API key from job data or fallback to environment variable
+    const notionApiKey = apiKey || process.env.NOTION_TOKEN;
+    if (!notionApiKey) {
+      throw new Error('No Notion API key provided');
+    }
+    
+    // Initialize Notion client with the provided API key
+    const notion = new Client({ auth: notionApiKey });
+    
     // Update job status to processing
     if (jobId) {
       await Job.findByIdAndUpdate(jobId, {

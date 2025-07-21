@@ -32,8 +32,22 @@ const gdocWorker = new Worker('gdoc-fetch', async (job) => {
       }
     });
     
+    // Check for common Google Docs error responses
+    if (response.status === 403) {
+      throw new Error('Document access denied. Please make sure the document is shared with "Anyone with the link" and has view permissions.');
+    }
+    
+    if (response.status === 404) {
+      throw new Error('Document not found. Please check that the URL is correct and the document exists.');
+    }
+    
     if (!response.data || response.data.trim().length === 0) {
       throw new Error('Document is empty or could not be accessed. Make sure the document is shared with "Anyone with the link".');
+    }
+    
+    // Check if the response contains HTML error page instead of text content
+    if (response.data.includes('<html') || response.data.includes('<!DOCTYPE')) {
+      throw new Error('Unable to access document content. Please ensure the document is shared with "Anyone with the link" and try again.');
     }
     
     console.log(`📄 Downloaded ${response.data.length} characters`);

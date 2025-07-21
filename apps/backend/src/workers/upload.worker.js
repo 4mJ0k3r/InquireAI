@@ -4,6 +4,8 @@ const fs = require('fs');
 const path = require('path');
 const Job = require('../models/Job');
 const { processTextChunks } = require('../services/processText.service');
+const pdfParse = require('pdf-parse');
+const mammoth = require('mammoth');
 
 const connection = new Redis({
   maxRetriesPerRequest: null
@@ -24,16 +26,32 @@ const uploadWorker = new Worker('file-process', async (job) => {
     
     if (fileExtension === '.txt' || fileExtension === '.md') {
       rawText = fs.readFileSync(filePath, 'utf8');
+    } else if (fileExtension === '.pdf') {
+      console.log(`📄 Processing PDF file: ${originalName}`);
+      const dataBuffer = fs.readFileSync(filePath);
+      const pdfData = await pdfParse(dataBuffer);
+      rawText = pdfData.text;
+    } else if (fileExtension === '.docx') {
+      console.log(`📝 Processing DOCX file: ${originalName}`);
+      const result = await mammoth.extractRawText({ path: filePath });
+      rawText = result.value;
+      if (result.messages.length > 0) {
+        console.log('📋 DOCX processing messages:', result.messages);
+      }
     } else {
-      // For now, skip unsupported file types
-      throw new Error(`Unsupported file type: ${fileExtension}`);
+      throw new Error(`Unsupported file type: ${fileExtension}. Supported types: .txt, .md, .pdf, .docx`);
     }
-    
+
+    // Validate that we extracted some text
+    if (!rawText || rawText.trim().length === 0) {
+      throw new Error(`No text content could be extracted from ${originalName}`);
+    }
+
     await Job.findByIdAndUpdate(jobId, {
       progress: 10,
       status: 'processing'
     });
-    console.log(`📊 Job ${jobId} progress: 10% - File read`);
+    console.log(`📊 Job ${jobId} progress: 10% - File read and text extracted`);
     
     // Step 2-6: Process text through the embedding pipeline
     const result = await processTextChunks({
@@ -57,7 +75,9 @@ const uploadWorker = new Worker('file-process', async (job) => {
         ...job.data.metadata,
         chunksCount: result.chunksCount,
         vectorsStored: result.vectorsStored,
-        fileSize: fs.statSync(filePath).size
+        fileSize: fs.statSync(filePath).size,
+        fileType: fileExtension,
+        textLength: rawText.length
       }
     });
     

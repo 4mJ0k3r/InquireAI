@@ -7,4 +7,4 @@ const connection = new Redis({
 
 const fileQueue = new Queue('file-process', { connection });
 
-module.exports = { fileQueue };
+module.exports = { fileQueue, connection };

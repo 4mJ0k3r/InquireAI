@@ -64,4 +64,7 @@ require('./workers/gdoc.worker');
 // Start site crawler worker
 require('./workers/crawler.worker');
 
+// Start Slack bot worker
+require('./workers/slack.worker');
+
 module.exports = app;

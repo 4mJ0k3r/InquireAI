@@ -1,39 +1,61 @@
-const jwt = require('../utils/jwt');
+const authService = require('../services/auth.service');
 
-const authMiddleware = (req, res, next) => {
+const authMiddleware = async (req, res, next) => {
   try {
-    // Extract Bearer token from Authorization header
-    const authHeader = req.headers.authorization;
+    let token = null;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // First, try to extract Bearer token from Authorization header
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7); // Remove 'Bearer ' prefix
+    }
+    
+    // If no token in header, check query parameters (for EventSource compatibility)
+    if (!token && req.query.token) {
+      token = req.query.token;
+    }
+    
+    console.log('🔍 Auth middleware debug:');
+    console.log('  - Request URL:', req.url);
+    console.log('  - Request method:', req.method);
+    console.log('  - Token found:', !!token);
+    console.log('  - Token source:', authHeader ? 'header' : 'query');
+    console.log('  - Token length:', token ? token.length : 0);
+    
+    if (!token) {
+      console.log('❌ No token found');
       return res.status(401).json({
         error: {
           code: 'UNAUTHORIZED',
-          message: 'Missing or invalid authorization header'
+          message: 'Missing or invalid authorization token'
         }
       });
     }
     
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-    
-    // Verify token
-    const decoded = jwt.verify(token);
+    // Validate session
+    console.log('🔄 Validating session...');
+    const { user, session, decoded } = await authService.validateSession(token);
     
     // Attach user and tenant info to request
     req.user = {
-      userId: decoded.sub,
-      role: decoded.role
+      userId: user._id.toString(),
+      email: user.email,
+      role: user.role,
+      tenantId: user._id.toString() // Use user ID as tenant ID for data isolation
     };
-    req.tenant = {
-      tenantId: decoded.tenantId
-    };
+    
+    req.session = session;
+    req.token = token;
     
     next();
   } catch (error) {
+    console.log('❌ Auth middleware error:');
+    console.log('  - Error message:', error.message);
+    console.log('  - Error stack:', error.stack);
     return res.status(401).json({
       error: {
         code: 'UNAUTHORIZED',
-        message: 'Invalid or expired token'
+        message: error.message || 'Invalid or expired token'
       }
     });
   }

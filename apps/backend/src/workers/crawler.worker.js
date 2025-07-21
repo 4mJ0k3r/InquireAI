@@ -1,10 +1,17 @@
 const { Worker } = require('bullmq');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const Sitemap = require('sitemapper').default;
 const { processTextChunks } = require('../services/processText.service');
 const Job = require('../models/Job');
 const { connection } = require('../queues/site.queue'); // Import Redis connection from site queue
+
+// Dynamic import for ES module
+let Sitemap;
+const sitemapPromise = (async () => {
+  const sitemapperModule = await import('sitemapper');
+  Sitemap = sitemapperModule.default;
+  return Sitemap;
+})();
 
 console.log('🕷️ Site crawler worker started and listening for jobs...');
 
@@ -121,6 +128,9 @@ const crawlerWorker = new Worker('site-crawl', async (job) => {
     try {
       console.log(`🗺️ Attempting to fetch sitemap for ${host}...`);
       const sitemapUrl = `https://${host}/sitemap.xml`;
+      
+      // Wait for Sitemap to be available
+      await sitemapPromise;
       const sitemap = new Sitemap();
       const result = await sitemap.fetch(sitemapUrl);
       

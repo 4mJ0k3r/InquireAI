@@ -21,7 +21,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
     console.log('👤 Tenant:', req.tenant);
     console.log('📄 File:', req.file);
     
-    const tenantId = req.tenant.tenantId;
+    const tenantId = req.user.tenantId;
     const filePath = req.file.path;
     const originalName = req.file.originalname;
 
@@ -66,7 +66,7 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
 router.post('/crawl-site', async (req, res, next) => {
   try {
     const { url } = req.body;
-    const tenantId = req.tenant.tenantId;
+    const tenantId = req.user.tenantId;
     
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
@@ -135,7 +135,7 @@ router.post('/crawl-site', async (req, res, next) => {
 router.post('/fetch-gdoc', async (req, res, next) => {
   try {
     const { url } = req.body;
-    const tenantId = req.tenant.tenantId;
+    const tenantId = req.user.tenantId;
     
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
@@ -256,7 +256,7 @@ router.get('/jobs/:id/stream', sseMiddleware, async (req, res, next) => {
 router.get('/search', async (req, res, next) => {
   try {
     const { q } = req.query;
-    const tenantId = req.tenant.tenantId;
+    const tenantId = req.user.tenantId;
     
     if (!q) {
       return res.status(400).json({ error: 'Query parameter "q" is required' });
@@ -305,7 +305,7 @@ router.get('/:docId/snippet', async (req, res, next) => {
   try {
     const { chunkId } = req.query;
     const { docId } = req.params;
-    const tenantId = req.tenant.tenantId;
+    const tenantId = req.user.tenantId;
     
     if (!chunkId) {
       return res.status(400).json({ error: 'chunkId query parameter is required' });
