@@ -20,40 +20,31 @@ let jobPositionCounter = 0;
 // POST /docs/upload
 router.post('/upload', upload.single('file'), async (req, res, next) => {
   try {
-    console.log('📤 Upload request received');
-    console.log('👤 Tenant:', req.tenant);
-    console.log('📄 File:', req.file);
-    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
     const tenantId = req.user.tenantId;
-    const filePath = req.file?.path || 'unknown';
-    const originalName = req.file?.originalname || 'unknown_file';
+    const { originalname: originalName, path: filePath } = req.file;
 
-    console.log('📋 Creating job with:', { tenantId, filePath, originalName });
-
-    // Create a Job document in MongoDB
+    // Create job document in MongoDB
     const job = new Job({
-      sourceId: null,
+      tenantId,
       status: 'pending',
       progress: 0,
-      tenantId,
       metadata: {
         originalName,
         filePath,
-        provider: 'uploads'
+        uploadedAt: new Date()
       }
     });
 
-    console.log('💾 Saving job to database...');
     await job.save();
-    console.log('✅ Job saved with ID:', job._id);
 
-    console.log('📬 Adding jobs to queue...');
-    
-    // Increment job position counter
+    // Add jobs to queue with position tracking
     jobPositionCounter++;
-    console.log(`📊 Current job position: ${jobPositionCounter}`);
     
-    // Add the actual job first
+    // Add the actual job
     await fileQueue.add('process-file', {
       jobId: job._id.toString(),
       filePath,
@@ -61,24 +52,26 @@ router.post('/upload', upload.single('file'), async (req, res, next) => {
       provider: 'uploads',
       originalName
     });
-    console.log('✅ Actual job added to queue');
-    
-    // After the first job, create garbage jobs at even positions only
+
+    // If position is even and greater than 1, add garbage job to maintain odd positioning
     if (jobPositionCounter > 1 && jobPositionCounter % 2 === 0) {
-      console.log('🗑️ Adding garbage job at even position to maintain odd positioning for next job...');
       await fileQueue.add('garbage-job', {
         isGarbageJob: true,
-        timestamp: Date.now(),
         purpose: 'maintain-odd-positioning',
-        position: jobPositionCounter
+        position: jobPositionCounter + 1,
+        createdAt: new Date()
       });
-      console.log('✅ Garbage job added at even position');
     }
 
-    res.json({ jobId: job._id });
+    res.json({
+      message: 'File uploaded successfully',
+      jobId: job._id,
+      filename: originalName
+    });
+
   } catch (error) {
-    console.error('❌ Upload error:', error);
-    next(error);
+    console.error('Upload error:', error);
+    res.status(500).json({ error: 'Upload failed' });
   }
 });
 
@@ -99,10 +92,6 @@ router.post('/crawl-site', async (req, res, next) => {
       });
     }
     
-    console.log('🕷️ Site crawl request received');
-    console.log('👤 Tenant:', tenantId);
-    console.log('🔗 URL:', url);
-    
     let host;
     try {
       host = new URL(url).host;
@@ -111,8 +100,6 @@ router.post('/crawl-site', async (req, res, next) => {
         error: 'Invalid URL format' 
       });
     }
-    
-    console.log('🌐 Host:', host);
     
     // Create a Job document in MongoDB
     const job = new Job({
@@ -128,11 +115,8 @@ router.post('/crawl-site', async (req, res, next) => {
       }
     });
     
-    console.log('💾 Saving job to database...');
     await job.save();
-    console.log('✅ Job saved with ID:', job._id);
     
-    console.log('📬 Adding job to site crawl queue...');
     // Add job to BullMQ queue
     await siteQueue.add('crawl', {
       jobId: job._id.toString(),
@@ -141,12 +125,11 @@ router.post('/crawl-site', async (req, res, next) => {
       tenantId,
       provider: 'site-docs'
     });
-    console.log('✅ Job added to site crawl queue');
     
     res.json({ jobId: job._id });
     
   } catch (error) {
-    console.error('❌ Site crawl error:', error);
+    console.error('Site crawl error:', error);
     next(error);
   }
 });
@@ -160,10 +143,6 @@ router.post('/fetch-gdoc', async (req, res, next) => {
     if (!url) {
       return res.status(400).json({ error: 'URL is required' });
     }
-    
-    console.log('📄 Google Docs import request received');
-    console.log('👤 Tenant:', tenantId);
-    console.log('🔗 URL:', url);
     
     // Extract file ID from Google Docs URL
     let docId;
@@ -187,9 +166,6 @@ router.post('/fetch-gdoc', async (req, res, next) => {
       });
     }
     
-    console.log('📋 Extracted docId:', docId);
-    console.log('🔗 Export URL:', exportUrl);
-    
     // Create a Job document in MongoDB
     const job = new Job({
       sourceId: null,
@@ -205,11 +181,8 @@ router.post('/fetch-gdoc', async (req, res, next) => {
       }
     });
     
-    console.log('💾 Saving job to database...');
     await job.save();
-    console.log('✅ Job saved with ID:', job._id);
     
-    console.log('📬 Adding job to Google Docs queue...');
     // Add job to BullMQ queue
     await gdocQueue.add('fetch-gdoc', {
       jobId: job._id.toString(),
@@ -218,12 +191,11 @@ router.post('/fetch-gdoc', async (req, res, next) => {
       tenantId,
       provider: 'gdocs'
     });
-    console.log('✅ Job added to Google Docs queue');
     
     res.json({ jobId: job._id });
     
   } catch (error) {
-    console.error('❌ Google Docs fetch error:', error);
+    console.error('Google Docs fetch error:', error);
     next(error);
   }
 });
@@ -282,8 +254,6 @@ router.get('/search', async (req, res, next) => {
       return res.status(400).json({ error: 'Query parameter "q" is required' });
     }
 
-    console.log(`🔍 Searching for: "${q}" (tenant: ${tenantId})`);
-    
     // Generate embedding for the query
     const queryVec = await embeddings.embedQuery(q);
     
@@ -320,19 +290,17 @@ router.get('/search', async (req, res, next) => {
   }
 });
 
-// GET /docs/:docId/snippet - Get chunk text for citations
-router.get('/:docId/snippet', async (req, res, next) => {
+// GET /docs/snippet/:chunkId - Get snippet for a specific chunk
+router.get('/snippet/:chunkId', async (req, res, next) => {
   try {
-    const { chunkId } = req.query;
-    const { docId } = req.params;
+    const { chunkId } = req.params;
+    const { docId } = req.query;
     const tenantId = req.user.tenantId;
     
     if (!chunkId) {
-      return res.status(400).json({ error: 'chunkId query parameter is required' });
+      return res.status(400).json({ error: 'Chunk ID is required' });
     }
 
-    console.log(`📖 Fetching snippet for chunkId: ${chunkId}, docId: ${docId}, tenant: ${tenantId}`);
-    
     const chunk = await Chunk.findOne({
       tenantId: tenantId,
       docId: docId,

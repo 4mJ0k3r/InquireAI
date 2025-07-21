@@ -18,13 +18,10 @@ const chatWorker = new Worker('chat', async (job) => {
   const { chatId, tenantId, question } = job.data;
   
   try {
-    console.log(`Processing chat job: ${chatId} for tenant: ${tenantId}`);
-    
     // Update status to streaming
     await ChatLog.findByIdAndUpdate(chatId, { status: 'streaming' });
 
     // Step 1: Search for relevant context using vector similarity
-    console.log('Searching for relevant context...');
     
     // Create embedding for the question
     const questionEmbedding = await embeddings.embedQuery(question);
@@ -50,13 +47,6 @@ const chatWorker = new Worker('chat', async (job) => {
         const payload = result.payload;
         return `Document: ${payload.filename || 'Unknown'}\nContent: ${payload.chunk || ''}`;
       }).join('\n\n---\n\n');
-    }
-
-    console.log(`Found ${searchResults.length} relevant chunks`);
-    
-    // Debug: Log the first search result to see available fields
-    if (searchResults.length > 0) {
-      console.log('First search result payload:', JSON.stringify(searchResults[0].payload, null, 2));
     }
 
     // Step 2: Generate streaming response with Gemini
@@ -86,8 +76,6 @@ Question: ${question}
 Answer:`
       : `You are a helpful assistant. The user asked: "${question}". Please provide a helpful response. Note: No specific document context was found for this question.`;
 
-    console.log('Generating streaming response...');
-
     // Retry logic for Gemini API call
     let result;
     let geminiRetry = 0;
@@ -100,7 +88,6 @@ Answer:`
       } catch (err) {
         geminiRetry++;
         if (err.status === 503 || err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.message.includes('overloaded')) {
-          console.warn(`⚠️ Gemini API error (attempt ${geminiRetry}/${geminiMaxRetries}): ${err.message}`);
           if (geminiRetry < geminiMaxRetries) {
             await new Promise(resolve => setTimeout(resolve, geminiDelay));
             geminiDelay *= 2; // Exponential backoff
@@ -155,8 +142,6 @@ Answer:`
     // Send end signal
     await publisher.publish(channelName, '[END]');
 
-    console.log(`Chat job completed: ${chatId}`);
-
   } catch (error) {
     console.error(`Error processing chat job ${chatId}:`, error);
     
@@ -190,7 +175,5 @@ chatWorker.on('completed', (job) => {
 chatWorker.on('failed', (job, err) => {
   console.error(`Chat job ${job.id} failed:`, err);
 });
-
-console.log('💬 Chat worker started and listening for jobs...');
 
 module.exports = chatWorker;

@@ -17,22 +17,14 @@ const connection = new Redis({
 const uploadWorker = new Worker('file-process', async (job) => {
   // Handle garbage jobs - complete them immediately
   if (job.data.isGarbageJob) {
-    console.log(`🗑️ Processing garbage job ${job.id} at position ${job.data.position || 'unknown'} - completing immediately`);
-    console.log(`🗑️ Garbage job purpose: ${job.data.purpose}`);
     return { message: 'Garbage job completed', purpose: job.data.purpose, position: job.data.position };
   }
   
   const { jobId, filePath, tenantId, provider, originalName } = job.data;
   
-  console.log(`🚀 Starting job ${jobId} for file: ${originalName}`);
-  
   try {
     // Step 1: Read file content
-    console.log(`📖 Reading file: ${filePath}`);
-    
-    // Resolve absolute path to handle working directory issues
     const absoluteFilePath = path.isAbsolute(filePath) ? filePath : path.resolve(__dirname, '..', '..', filePath);
-    console.log(`🔍 Resolved absolute path: ${absoluteFilePath}`);
     
     let rawText;
     const fileExtension = path.extname(originalName).toLowerCase();
@@ -40,17 +32,12 @@ const uploadWorker = new Worker('file-process', async (job) => {
     if (fileExtension === '.txt' || fileExtension === '.md') {
       rawText = fs.readFileSync(absoluteFilePath, 'utf8');
     } else if (fileExtension === '.pdf') {
-      console.log(`📄 Processing PDF file: ${originalName}`);
       const dataBuffer = fs.readFileSync(absoluteFilePath);
       const pdfData = await pdfParse(dataBuffer);
       rawText = pdfData.text;
     } else if (fileExtension === '.docx') {
-      console.log(`📝 Processing DOCX file: ${originalName}`);
       const result = await mammoth.extractRawText({ path: absoluteFilePath });
       rawText = result.value;
-      if (result.messages.length > 0) {
-        console.log('📋 DOCX processing messages:', result.messages);
-      }
     } else {
       throw new Error(`Unsupported file type: ${fileExtension}. Supported types: .txt, .md, .pdf, .docx`);
     }
@@ -64,7 +51,6 @@ const uploadWorker = new Worker('file-process', async (job) => {
       progress: 10,
       status: 'processing'
     });
-    console.log(`📊 Job ${jobId} progress: 10% - File read and text extracted`);
     
     // Step 2-6: Process text through the embedding pipeline
     const result = await processTextChunks({
@@ -76,7 +62,6 @@ const uploadWorker = new Worker('file-process', async (job) => {
       jobId,
       updateProgress: async (progress) => {
         await Job.findByIdAndUpdate(jobId, { progress });
-        console.log(`📊 Job ${jobId} progress: ${progress}%`);
       }
     });
     
@@ -96,9 +81,6 @@ const uploadWorker = new Worker('file-process', async (job) => {
         textLength: rawText.length
       }
     });
-    
-    console.log(`📊 Job ${jobId} progress: 100% - Complete!`);
-    console.log(`✅ Job ${jobId} completed successfully - ${result.chunksCount} chunks embedded and stored`);
     
   } catch (error) {
     console.error(`❌ Job ${jobId} failed:`, error);
@@ -123,11 +105,11 @@ const uploadWorker = new Worker('file-process', async (job) => {
 
 // Event listeners for worker
 uploadWorker.on('completed', (job) => {
-  console.log(`🎉 Worker completed job ${job.id}`);
+  // Job completed successfully
 });
 
 uploadWorker.on('failed', (job, err) => {
-  console.log(`💥 Worker failed job ${job.id}:`, err.message);
+  console.error(`💥 Worker failed job ${job.id}:`, err.message);
 });
 
 uploadWorker.on('error', (err) => {

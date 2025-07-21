@@ -81,22 +81,20 @@ router.post('/:provider/connect', async (req, res, next) => {
       );
       
       // Queue the sync job
-      const syncJob = await notionQueue.add('sync', { 
-        tenantId, 
-        jobId: job._id.toString(),
-        apiKey: notionApiKey
+      const syncJob = await notionQueue.add('sync-notion', {
+        tenantId,
+        editedAfter: null
       });
-      
-      // Register repeatable job for automatic sync every 2 hours
-      await notionQueue.add(
-        'sync',
-        { tenantId, apiKey: notionApiKey },          // data
-        { repeat: { cron: '0 */2 * * *' } }  // every 2 hours
-      );
-      
-      console.log(`🚀 Queued Notion sync job ${syncJob.id} for tenant ${tenantId}`);
-      console.log(`⏰ Registered repeatable sync job (every 2 hours) for tenant ${tenantId}`);
-      
+
+      // Set up repeatable job for automatic syncing every 2 hours
+      await notionQueue.add('sync-notion', {
+        tenantId,
+        editedAfter: null // For repeatable jobs, always sync all
+      }, {
+        repeat: { cron: '0 */2 * * *' }, // Every 2 hours
+        jobId: `notion-sync-${tenantId}` // Unique job ID to prevent duplicates
+      });
+
       res.json({ 
         message: 'sync_started', 
         jobId: job._id.toString(),
@@ -184,28 +182,20 @@ router.post('/:provider/disconnect', async (req, res, next) => {
     const { provider } = req.params;
     
     if (provider === 'notion') {
-      // Remove repeatable jobs for this tenant
-      const repeatableJobs = await notionQueue.getRepeatableJobs();
-      for (const job of repeatableJobs) {
-        if (job.name === 'sync' && job.data?.tenantId === tenantId) {
-          await notionQueue.removeRepeatable('sync', job.opts.repeat);
-          console.log(`🗑️ Removed repeatable job for tenant ${tenantId}`);
-        }
+      // Remove repeatable job
+      try {
+        await notionQueue.removeRepeatable('sync-notion', {
+          cron: '0 */2 * * *',
+          jobId: `notion-sync-${tenantId}`
+        });
+      } catch (error) {
+        // Job might not exist, continue
       }
-      
-      // Update source status to disconnected and clear metadata
-      await Source.findOneAndUpdate(
-        { tenantId, provider: 'notion' },
-        { 
-          status: 'disconnected', 
-          lastSynced: null,
-          metadata: {} // Clear stored API key
-        },
-        { upsert: true, new: true }
-      );
-      
-      console.log(`🔌 Disconnected Notion for tenant ${tenantId}`);
-      res.json({ message: 'disconnected' });
+
+      // Delete the source
+      await Source.findOneAndDelete({ tenantId, type: 'notion' });
+
+      res.json({ message: 'notion_disconnected' });
       
     } else {
       // For other providers, just update status to disconnected
@@ -243,7 +233,6 @@ router.patch('/notion/schedule', async (req, res, next) => {
     
     // Add new repeatable job with updated cron
     await notionQueue.add('sync', { tenantId }, { repeat: { cron } });
-    console.log(`⏰ Updated repeatable sync job for tenant ${tenantId} with cron: ${cron}`);
     
     res.json({ message: 'cron updated', cron });
   } catch (error) {
